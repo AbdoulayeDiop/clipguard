@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clipguard"
-version = "0.3.0"
+version = "0.4.0"
 description = "Desktop alerts when you copy passwords, API keys, card numbers or other sensitive data."
 readme = "README.md"
 requires-python = ">=3.11"

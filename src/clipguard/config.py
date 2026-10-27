@@ -95,6 +95,42 @@ def load_config(path: Path | None = None) -> Config:
     return Config(**data).validate()
 
 
+def _toml_value(v) -> str:
+    import json
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return f"{v:g}" if isinstance(v, float) else str(v)
+    if isinstance(v, str):
+        return json.dumps(v, ensure_ascii=False)  # a valid TOML basic string
+    if isinstance(v, list):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    raise TypeError(f"unsupported config value {v!r}")
+
+
+def render_config(cfg: Config) -> str:
+    """The commented config.toml for these settings (same layout as DEFAULT_CONFIG)."""
+    out = []
+    for line in DEFAULT_CONFIG.splitlines():
+        key = line.split("=", 1)[0].strip()
+        if line and not line.startswith("#") and "=" in line and hasattr(cfg, key):
+            out.append(f"{key} = {_toml_value(getattr(cfg, key))}")
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def save_config(cfg: Config, path: Path | None = None) -> Path:
+    """Validate and write settings atomically, so a running ClipGuard never reads half a file."""
+    cfg.validate()
+    path = path or config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".toml.tmp")
+    tmp.write_text(render_config(cfg), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
 def write_default_config(path: Path | None = None) -> Path:
     path = path or config_path()
     path.parent.mkdir(parents=True, exist_ok=True)

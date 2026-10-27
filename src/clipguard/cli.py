@@ -87,6 +87,11 @@ def _cmd_config(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_settings(_: argparse.Namespace) -> int:
+    from .settings import run_standalone
+    return run_standalone()
+
+
 def _cmd_test(_: argparse.Namespace) -> int:
     shown = notify("ClipGuard test", "Notifications are working.", False)
     print("Notification sent." if shown else "No native notifier found; printed to terminal instead.")
@@ -128,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("detectors", help="list detectors").set_defaults(func=_cmd_detectors)
     sub.add_parser("init-config", help="create a default config file").set_defaults(func=_cmd_config)
     sub.add_parser("test-notify", help="send a test notification").set_defaults(func=_cmd_test)
+    sub.add_parser("settings", help="open the settings window").set_defaults(func=_cmd_settings)
 
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

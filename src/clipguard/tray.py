@@ -9,7 +9,7 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from . import __version__
-from .config import config_dir, write_default_config
+from .config import config_dir
 from .icon import make_icon
 from .theme import taskbar_theme
 
@@ -53,8 +53,7 @@ class Tray:
                      checked=lambda i: app.paste_guard_on,
                      visible=app.paste_guard_available),
                 menu.SEPARATOR,
-                item("Edit settings", self._edit_settings),
-                item("Reload settings", self._reload),
+                item("Settings", lambda: app.open_settings(), default=True),
                 item("Open ClipGuard folder", lambda: open_path(config_dir())),
                 menu.SEPARATOR,
                 item("Quit ClipGuard", self._quit),
@@ -89,12 +88,6 @@ class Tray:
 
     def _toggle_guard(self) -> None:
         self.app.set_paste_guard(not self.app.paste_guard_on)
-
-    def _edit_settings(self) -> None:
-        open_path(write_default_config())
-
-    def _reload(self) -> None:
-        self.app.reload_config()
 
     def _quit(self) -> None:
         self.app.quit()

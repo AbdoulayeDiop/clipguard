@@ -12,13 +12,23 @@ The dialog follows Windows' light or dark app setting.
 
 ## Tray icon
 
-While ClipGuard runs, a shield sits in the notification area of the taskbar (on Windows, click the **^** arrow if it's hidden; drag it onto the taskbar to keep it visible). A solid shield means ClipGuard is watching; an outline means it's paused. Right-click it for:
+While ClipGuard runs, a shield sits in the notification area of the taskbar (on Windows, click the **^** arrow if it's hidden; drag it onto the taskbar to keep it visible). A solid shield means ClipGuard is watching; an outline means it's paused. Click it to open **Settings**, or right-click it for:
 
 - **Pause:** stop watching temporarily.
 - **Ask before pasting secrets** (Windows): turn the paste guard on or off.
-- **Edit settings** / **Reload settings:** open `config.toml`, then apply your changes without restarting.
-- **Open ClipGuard folder:** settings, `clipguard.log` and `detections.jsonl`.
+- **Settings:** the settings window (below).
+- **Open ClipGuard folder:** `clipguard.log` and `detections.jsonl`.
 - **Quit ClipGuard.**
+
+## Settings
+
+![Settings window](docs/settings.png)
+
+- **Protection:** ask before pasting secrets, which data to alert on (secrets only, plus financial details, or everything), clearing a copied secret after 30 s / 1 min / 5 min, starting at sign-in (Windows) and the detection log.
+- **Detectors:** turn individual detectors off, grouped by severity.
+- **Exceptions:** values never to flag, such as a public test key. They're entered and listed masked.
+
+Save applies the changes immediately, with no restart. ClipGuard also notices if you edit `config.toml` by hand (**Open settings file** in the window) and applies that too.
 
 ## Paste guard (Windows)
 
@@ -80,6 +90,7 @@ sudo apt install wl-clipboard libnotify-bin  # Wayland
 clipguard                     # start watching the clipboard
 clipguard test-notify         # check that notifications show up
 clipguard scan notes.txt      # scan a file (or "-" for stdin)
+clipguard settings            # open the settings window
 clipguard init-config         # create a config file and print its path
 ```
 

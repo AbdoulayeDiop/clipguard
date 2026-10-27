@@ -84,18 +84,62 @@ class App:
         if self.tray:
             self.tray.refresh()
 
-    def reload_config(self) -> None:
+    def _config_file(self):
+        from .config import config_path
+        return self.config_path or config_path()
+
+    def _config_mtime(self) -> float | None:
         try:
-            cfg = load_config(self.config_path)
-        except Exception as e:
-            self._notify("ClipGuard settings error", str(e)[:200])
-            return
+            return self._config_file().stat().st_mtime
+        except OSError:
+            return None
+
+    def apply_config(self, cfg: Config) -> None:
+        """Use new settings right away (from the Settings window or a file change)."""
         self.config = self.monitor.config = cfg
         self.paste_guard_on = self.paste_guard_available and cfg.paste_guard
         self._update_hint()
-        self._notify("Settings reloaded", "ClipGuard is using your updated settings.")
+        self._seen_mtime = self._config_mtime()
+        log.info("settings applied")
         if self.tray:
             self.tray.refresh()
+
+    def reload_config(self, notify: bool = True) -> None:
+        try:
+            cfg = load_config(self.config_path)
+        except Exception as e:
+            self._seen_mtime = self._config_mtime()  # don't repeat the error every poll
+            self._notify("ClipGuard settings error", str(e)[:200])
+            return
+        self.apply_config(cfg)
+        if notify:
+            self._notify("Settings updated", "ClipGuard is using your changes.")
+
+    def open_settings(self) -> None:
+        """Called from the tray (any thread)."""
+        if IS_WINDOWS and self.root is not None:
+            self._events.put(("settings",))
+            return
+        # macOS / Linux: the tray owns the main thread, so the window runs as its own process;
+        # the watcher notices the saved file and applies it.
+        import subprocess
+        import sys
+        cmd = [sys.executable, "settings"] if getattr(sys, "frozen", False) else \
+            [sys.executable, "-m", "clipguard", "settings"]
+        subprocess.Popen(cmd)
+
+    def _show_settings(self) -> None:
+        from .settings import open_settings
+        from .theme import Theme
+
+        win = getattr(self, "_settings_win", None)
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_force()
+            return
+        self._settings_win = open_settings(self.root, on_saved=self.apply_config,
+                                           theme=Theme(self.root), config_file=self.config_path)
 
     def quit(self) -> None:
         log.info("quitting")
@@ -111,7 +155,14 @@ class App:
         if IS_WINDOWS:
             from .winapi import clipboard_seq as seq_fn
         self.monitor.prime()
+        self._seen_mtime = self._config_mtime()
+        last_cfg_check = 0.0
         while not self._stop.is_set():
+            now = time.monotonic()
+            if now - last_cfg_check >= 2.0:  # settings saved elsewhere (window process, editor)
+                last_cfg_check = now
+                if self._config_mtime() != self._seen_mtime:
+                    self.reload_config()
             if not self.paused:
                 try:
                     seq = seq_fn() if seq_fn else None
@@ -198,6 +249,11 @@ class App:
                 break
             if kind == "paste":
                 self._handle_paste(*args)
+            elif kind == "settings":
+                try:
+                    self._show_settings()
+                except Exception:
+                    log.exception("could not open settings")
         if self._stop.is_set():
             self.root.quit()
             return

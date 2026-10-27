@@ -90,6 +90,11 @@ try:
     check("instant paste is masked too", got == "pin **** **** **** 4444", repr(got))
 
     check("app still running", app.poll() is None)
+
+    settings = subprocess.Popen([exe, "settings"], env=env)
+    pump(4)
+    check("settings window starts", settings.poll() is None)
+    settings.terminate()
 finally:
     app.terminate()
     try:
