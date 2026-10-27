@@ -62,7 +62,16 @@ def _cmd_test(_: argparse.Namespace) -> int:
     return 0
 
 
+def _ensure_streams() -> None:
+    """Windowed builds (no console) have sys.stdout/stderr set to None."""
+    import os
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+
+
 def main(argv: list[str] | None = None) -> int:
+    _ensure_streams()
     parser = argparse.ArgumentParser(
         prog="clipguard",
         description="Get an alert when you copy passwords, API keys, card numbers "

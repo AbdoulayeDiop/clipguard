@@ -14,7 +14,22 @@ Works on macOS, Windows and Linux. Everything runs locally: nothing is sent anyw
 
 By default, alerts fire at **medium** and above. Run `clipguard detectors` for the full list, or read [how the detectors work](docs/detectors.md).
 
-## Install
+## Download (no Python needed)
+
+Grab the file for your system from the [latest release](https://github.com/AbdoulayeDiop/clipguard/releases/latest):
+
+| System | File |
+|---|---|
+| Windows: runs silently in the background | `clipguard-background-windows-x64.exe` |
+| Windows: shows a console window | `clipguard-windows-x64.exe` |
+| macOS (Apple Silicon) | `clipguard-macos-arm64` |
+| Linux | `clipguard-linux-x64` |
+
+Double-click to start watching the clipboard. The background version has no window; to stop it, end **clipguard-background** in Task Manager. To start it at login, press Win+R, type `shell:startup`, and put a shortcut to the `.exe` in that folder.
+
+Windows SmartScreen may warn the first time because the file isn't code-signed: click **More info → Run anyway**. On macOS, run `chmod +x clipguard-macos-arm64`, then right-click → Open the first time.
+
+## Install with pip
 
 Requires Python 3.11+.
 
