@@ -12,7 +12,7 @@ Works on macOS, Windows and Linux. Everything runs locally: nothing is sent anyw
 | Medium | IBANs (mod-97 checked), JWTs, Slack webhooks, high-entropy strings that look like passwords |
 | Low | Email addresses, phone numbers |
 
-By default, alerts fire at **medium** and above. Run `clipguard detectors` for the full list.
+By default, alerts fire at **medium** and above. Run `clipguard detectors` for the full list, or read [how the detectors work](docs/detectors.md).
 
 ## Install
 
