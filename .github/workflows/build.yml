@@ -68,19 +68,35 @@ jobs:
           path: out/*
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Runs for version tags, or when started manually from the Actions tab
+    # (the tag is then taken from __version__ in src/clipguard/__init__.py).
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: out
           merge-multiple: true
-      - name: Create release
+      - name: Pick tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            v=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/clipguard/__init__.py)
+            echo "TAG=v${v}" >> "$GITHUB_ENV"
+          fi
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" out/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "ClipGuard ${GITHUB_REF_NAME}" \
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
+            exit 0
+          fi
+          gh release create "$TAG" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ClipGuard ${TAG}" \
             --notes "Standalone executables, no Python needed. On Windows, download clipguard-background-windows-x64.exe to run silently, or clipguard-windows-x64.exe to see output in a console."
