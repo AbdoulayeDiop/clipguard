@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from . import __version__
 from .config import config_dir, write_default_config
 from .icon import make_icon
+from .theme import taskbar_theme
 
 if TYPE_CHECKING:
     from .app import App
@@ -38,16 +39,17 @@ class Tray:
 
         self.app = app
         self._pystray = pystray
+        self.theme = taskbar_theme()
         item, menu = pystray.MenuItem, pystray.Menu
         self.icon = pystray.Icon(
             "ClipGuard",
-            make_icon(True),
+            self._image(),
             self._title(),
             menu=menu(
                 item(lambda i: f"ClipGuard {__version__}: {self._state()}", None, enabled=False),
                 menu.SEPARATOR,
                 item("Pause", self._toggle_pause, checked=lambda i: app.paused),
-                item("Ask before pasting sensitive data", self._toggle_guard,
+                item("Ask before pasting secrets", self._toggle_guard,
                      checked=lambda i: app.paste_guard_on,
                      visible=app.paste_guard_available),
                 menu.SEPARATOR,
@@ -67,13 +69,18 @@ class Tray:
         self.icon.notify(body, title)
 
     def _state(self) -> str:
-        return "paused" if self.app.paused else "active"
+        return "paused" if self.app.paused else "watching"
 
     def _title(self) -> str:
-        return f"ClipGuard: {self._state()}"
+        return "ClipGuard: paused" if self.app.paused else "ClipGuard: watching your clipboard"
+
+    def _image(self):
+        # 64px source; Windows scales it to the tray size. Inks follow the taskbar theme.
+        return make_icon(not self.app.paused, 64, self.theme)
 
     def refresh(self) -> None:
-        self.icon.icon = make_icon(not self.app.paused)
+        self.theme = taskbar_theme()
+        self.icon.icon = self._image()
         self.icon.title = self._title()
         self.icon.update_menu()
 
@@ -81,9 +88,7 @@ class Tray:
         self.app.set_paused(not self.app.paused)
 
     def _toggle_guard(self) -> None:
-        self.app.paste_guard_on = not self.app.paste_guard_on
-        log.info("paste guard %s", "on" if self.app.paste_guard_on else "off")
-        self.refresh()
+        self.app.set_paste_guard(not self.app.paste_guard_on)
 
     def _edit_settings(self) -> None:
         open_path(write_default_config())

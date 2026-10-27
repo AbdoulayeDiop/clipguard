@@ -37,18 +37,20 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def format_alert(findings: list[Finding]) -> tuple[str, str]:
+DEFAULT_HINT = "Check where you paste it."
+GUARD_HINT = "ClipGuard will ask before you paste it."
+
+
+def format_alert(findings: list[Finding], hint: str = DEFAULT_HINT) -> tuple[str, str]:
+    """Notification copy, per the design system: name the data, count the rest."""
     top = findings[0]
     labels = []
     for f in findings:
         if f.label not in labels:
             labels.append(f.label)
-    title = "⚠️ Sensitive data copied" if top.severity == HIGH else "Possible sensitive data copied"
-    body = ", ".join(labels[:3])
-    if len(labels) > 3:
-        body += f" +{len(labels) - 3} more"
-    body += f" ({top.masked}). Check where you paste it."
-    return title, body
+    more = len(labels) - 1
+    title = f"{labels[0]} and {more} more copied" if more else f"{labels[0]} copied"
+    return title, f"{top.masked} · {hint}"
 
 
 @dataclass
@@ -65,6 +67,8 @@ class Monitor:
         self._clear_at: float | None = None
         self._clear_digest: str | None = None
         self.last_findings: list[Finding] = []  # findings for the current clipboard
+        self.alert_hint = DEFAULT_HINT
+        self._clear_label = "sensitive item"
         if self.log_path is None and self.config.log_detections:
             self.log_path = config_dir() / "detections.jsonl"
 
@@ -113,7 +117,7 @@ class Monitor:
         if not findings:
             return None
 
-        title, body = format_alert(findings)
+        title, body = format_alert(findings, self.alert_hint)
         urgent = findings[0].severity == HIGH
         self.notifier(title, body, urgent)
         self._log(findings)
@@ -121,6 +125,7 @@ class Monitor:
         if urgent and self.config.auto_clear_seconds > 0:
             self._clear_at = self.clock() + self.config.auto_clear_seconds
             self._clear_digest = digest
+            self._clear_label = findings[0].label
         return findings
 
     def _maybe_auto_clear(self, current_digest: str) -> bool:
@@ -139,8 +144,11 @@ class Monitor:
             return False
         self._last_digest = _digest("")
         self.last_findings = []
-        self.notifier("Clipboard cleared",
-                      "ClipGuard removed the sensitive item from your clipboard.", False)
+        secs = self.config.auto_clear_seconds
+        what = self._clear_label
+        if what[1:2].islower():  # "Credit card number" -> "credit card number"; keep "IBAN"
+            what = what[0].lower() + what[1:]
+        self.notifier("Clipboard cleared", f"The {what} was removed after {secs:g} seconds.", False)
         return True
 
     def _log(self, findings: list[Finding]) -> None:

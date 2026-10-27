@@ -127,3 +127,19 @@ def test_validators():
     assert not luhn_valid("1234")
     assert iban_valid("DE89 3704 0044 0532 0130 00")
     assert not iban_valid("DE00 3704 0044 0532 0130 00")
+
+
+def test_redact_segments_mark_hidden_runs():
+    from clipguard.detectors import redact_segments
+    text = "card 4111 1111 1111 1111 ok"
+    segs = redact_segments(text, scan(text))
+    assert segs == [("card ", False), ("****", True), (" ", False), ("****", True), (" ", False),
+                    ("****", True), (" 1111 ok", False)]
+    assert "".join(s for s, _ in segs) == redact(text, scan(text))
+
+
+def test_mask_parts():
+    from clipguard.detectors import mask_parts
+    assert mask_parts(STRIPE) == ("sk_l", 8)
+    assert mask_parts("Tr0ub4dor&3") == ("Tr", 8)
+    assert mask_parts("abc") == ("", 3)

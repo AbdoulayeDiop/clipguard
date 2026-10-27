@@ -37,8 +37,9 @@ def test_alerts_once_per_copy():
     clip.text = CARD
     m.tick(); m.tick(); m.tick()
     assert len(alerts) == 1
-    assert "Credit card" in alerts[0][1]
-    assert CARD not in alerts[0][1]  # never show the raw value
+    title, body, _ = alerts[0]
+    assert title == "Credit card number copied"
+    assert CARD not in title + body  # never show the raw value
 
 
 def test_existing_clipboard_not_flagged_at_startup():
@@ -92,3 +93,20 @@ def test_log_never_contains_secret(tmp_path):
     m.tick()
     content = log.read_text()
     assert "credit_card" in content and "4111" not in content
+
+
+def test_alert_copy_counts_other_kinds():
+    from clipguard.detectors import scan
+    from clipguard.monitor import GUARD_HINT, format_alert
+    title, body = format_alert(scan("4111 1111 1111 1111 and FR76 3000 6000 0112 3456 7890 189"), GUARD_HINT)
+    assert title == "Credit card number and 1 more copied"
+    assert body.endswith("· ClipGuard will ask before you paste it.")
+    assert "4111 1111" not in body
+
+
+def test_auto_clear_names_the_data():
+    m, clip, alerts, clock = make(Config(log_detections=False, auto_clear_seconds=30))
+    clip.text = CARD
+    m.tick()
+    clock.t = 31; m.tick()
+    assert alerts[-1][1] == "The credit card number was removed after 30 seconds."

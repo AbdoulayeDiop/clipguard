@@ -37,12 +37,18 @@ def mask(value: str, keep: int | None = None) -> str:
     Long values (API keys) keep 4 characters so you can tell which key it is;
     short ones (passwords) keep fewer so the hint doesn't give much away.
     """
+    kept, hidden = mask_parts(value, keep)
+    return kept + ("…" if kept else "") + "*" * hidden
+
+
+def mask_parts(value: str, keep: int | None = None) -> tuple[str, int]:
+    """(visible leading characters, number of hidden characters to draw, max 8)."""
     value = value.strip()
     if keep is None:
         keep = 4 if len(value) >= 20 else 2 if len(value) >= 10 else 0
     if len(value) <= keep + 2:
-        return "*" * len(value)
-    return value[:keep] + "…" + "*" * min(8, len(value) - keep)
+        return "", len(value)
+    return value[:keep], min(8, len(value) - keep)
 
 
 # --------------------------------------------------------------------------
@@ -266,20 +272,40 @@ def redact_value(f: Finding) -> str:
     return v[:keep] + "*" * 8
 
 
-def redact(text: str, findings: list[Finding]) -> str:
-    """Return text with every finding replaced by its masked form."""
+def redact_segments(text: str, findings: list[Finding]) -> list[tuple[str, bool]]:
+    """The masked paste as (text, is_hidden) segments.
+
+    Hidden segments are the asterisk runs that replace secret characters; the
+    dialog draws them as redaction bars. Joining the texts gives redact().
+    """
     spans: list[Finding] = []
     for f in sorted(findings, key=lambda f: (f.start, -(f.end - f.start))):
         if spans and f.start < spans[-1].end:
             continue  # overlaps a span we're already masking
         spans.append(f)
-    out, pos = [], 0
+    segs: list[tuple[str, bool]] = []
+
+    def add(s: str, hidden: bool) -> None:
+        if not s:
+            return
+        if segs and segs[-1][1] == hidden:
+            segs[-1] = (segs[-1][0] + s, hidden)
+        else:
+            segs.append((s, hidden))
+
+    pos = 0
     for f in spans:
-        out.append(text[pos:f.start])
-        out.append(redact_value(f))
+        add(text[pos:f.start], False)
+        for run in re.findall(r"\*+|[^*]+", redact_value(f)):
+            add(run, run[0] == "*")
         pos = f.end
-    out.append(text[pos:])
-    return "".join(out)
+    add(text[pos:], False)
+    return segs
+
+
+def redact(text: str, findings: list[Finding]) -> str:
+    """Return text with every finding replaced by its masked form."""
+    return "".join(s for s, _ in redact_segments(text, findings))
 
 
 def _dedupe(findings: list[Finding]) -> list[Finding]:

@@ -1,38 +1,69 @@
-"""Draws ClipGuard's shield icon with Pillow (no image files to ship)."""
+"""The ClipGuard shield, drawn from the design system's geometry.
+
+The shield lives on a 24-unit grid (see assets/Marks in the design system):
+a body path plus two redaction bars. Active = solid jade, paused = outline,
+hold = solid amber (dialog only).
+"""
 
 from __future__ import annotations
 
-from PIL import Image, ImageDraw
+from .theme import COLORS
 
-ACTIVE = (31, 157, 85)    # green
-PAUSED = (128, 134, 145)  # grey
-
-
-def _shield(s: float) -> list[tuple[float, float]]:
-    pts = [(0.50 * s, 0.06 * s), (0.86 * s, 0.18 * s), (0.86 * s, 0.48 * s)]
-    # Right curve down to the bottom point, then mirror for the left side.
-    for i in range(1, 9):
-        t = i / 9
-        pts.append(((0.86 - 0.36 * t ** 1.4) * s, (0.48 + 0.46 * t) * s))
-    pts.append((0.50 * s, 0.95 * s))
-    left = [(s - x, y) for x, y in reversed(pts[1:-1])]
-    return pts + left
+# Shield body on the 24 grid: straight top, then two cubic curves to the point.
+_TOP = [(12.0, 1.75), (20.25, 4.75), (20.25, 11.0)]
+_RIGHT_CURVE = ((20.25, 11.0), (20.25, 16.1), (16.8, 20.1), (12.0, 22.25))
+_LEFT_CURVE = ((12.0, 22.25), (7.2, 20.1), (3.75, 16.1), (3.75, 11.0))
+BARS = [(7.5, 8.9, 9.0), (7.5, 12.9, 5.5)]  # x, y, width; height 2.4, corner 0.6
 
 
-def make_icon(active: bool = True, size: int = 64) -> Image.Image:
-    big = 256
+def _cubic(p0, p1, p2, p3, n):
+    pts = []
+    for i in range(1, n + 1):
+        t = i / n
+        a, b, c, d = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t ** 2, t ** 3
+        pts.append((a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+                    a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]))
+    return pts
+
+
+def shield_points(scale: float = 1.0, ox: float = 0.0, oy: float = 0.0, n: int = 14):
+    pts = list(_TOP) + _cubic(*_RIGHT_CURVE, n) + _cubic(*_LEFT_CURVE, n) + [(3.75, 4.75)]
+    return [(ox + x * scale, oy + y * scale) for x, y in pts]
+
+
+def bar_rects(scale: float = 1.0, ox: float = 0.0, oy: float = 0.0):
+    return [(ox + x * scale, oy + y * scale, ox + (x + w) * scale, oy + (y + 2.4) * scale)
+            for x, y, w in BARS]
+
+
+def inks(state: str, theme: str) -> tuple[str, str]:
+    """(body colour, bar colour) for a state in a theme."""
+    c = COLORS[theme]
+    if state == "paused":
+        return c["ink-muted"], c["ink-muted"]
+    if state == "hold":
+        return c["hold-mark"], c["surface-raised"]
+    return c["guard"], c["on-guard"]
+
+
+def make_icon(active: bool = True, size: int = 64, theme: str = "light"):
+    from PIL import Image, ImageDraw
+
+    big = 512
+    s = big / 24
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.polygon(_shield(big), fill=ACTIVE if active else PAUSED)
-    w = int(big * 0.09)
-    if active:  # check mark
-        d.line([(0.32 * big, 0.50 * big), (0.45 * big, 0.64 * big), (0.70 * big, 0.36 * big)],
-               fill="white", width=w, joint="curve")
-    else:       # pause bars
-        for x in (0.40, 0.60):
-            d.rectangle([(x - 0.05) * big, 0.34 * big, (x + 0.05) * big, 0.66 * big], fill="white")
+    body, bar = inks("active" if active else "paused", theme)
+    pts = shield_points(s)
+    if active:
+        d.polygon(pts, fill=body)
+    else:
+        d.line(pts + [pts[0], pts[1]], fill=body, width=round(1.9 * s), joint="curve")
+    for r in bar_rects(s):
+        d.rounded_rectangle(r, radius=0.6 * s, fill=bar)
     return img.resize((size, size), Image.LANCZOS)
 
 
 def save_ico(path: str) -> None:
-    make_icon(True, 256).save(path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)])
+    make_icon(True, 256, "light").save(
+        path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)])

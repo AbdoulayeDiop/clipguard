@@ -21,8 +21,8 @@ import threading
 import time
 
 from .config import Config, load_config
-from .detectors import redact
-from .monitor import Monitor
+from .detectors import redact, redact_segments
+from .monitor import DEFAULT_HINT, GUARD_HINT, Monitor
 from .notify import notify as native_notify
 
 log = logging.getLogger("clipguard")
@@ -52,6 +52,17 @@ class App:
         self._scanned: tuple[int | None, bool] = (None, True)  # (clipboard seq, sensitive?)
         self._allowed_seq: int | None = None
         self._test_choice = os.environ.get("CLIPGUARD_TEST_CHOICE")
+        self._update_hint()
+
+    def _update_hint(self) -> None:
+        self.monitor.alert_hint = GUARD_HINT if self.paste_guard_on and not self.paused else DEFAULT_HINT
+
+    def set_paste_guard(self, on: bool) -> None:
+        self.paste_guard_on = on and self.paste_guard_available
+        log.info("paste guard %s", "on" if self.paste_guard_on else "off")
+        self._update_hint()
+        if self.tray:
+            self.tray.refresh()
 
     # ------------------------------------------------------------------ alerts
     def _notify(self, title: str, body: str, urgent: bool = False) -> None:
@@ -69,6 +80,7 @@ class App:
         log.info("paused" if paused else "resumed")
         if not paused:
             self.monitor.prime()  # don't alert for things copied while paused
+        self._update_hint()
         if self.tray:
             self.tray.refresh()
 
@@ -80,7 +92,8 @@ class App:
             return
         self.config = self.monitor.config = cfg
         self.paste_guard_on = self.paste_guard_available and cfg.paste_guard
-        self._notify("ClipGuard", "Settings reloaded.")
+        self._update_hint()
+        self._notify("Settings reloaded", "ClipGuard is using your updated settings.")
         if self.tray:
             self.tray.refresh()
 
@@ -141,7 +154,7 @@ class App:
             masked = redact(text, findings)
             log.info("paste paused: %s", ",".join(sorted({f.detector for f in findings})))
             choice = ask_paste_choice(
-                self.root, findings, masked,
+                self.root, findings, redact_segments(text, findings),
                 on_shown=lambda top: winapi.force_foreground(int(top.wm_frame(), 16)),
                 auto_choice=self._test_choice,
             )
@@ -209,7 +222,7 @@ class App:
             from .winapi import already_running
             if already_running():
                 native_notify("ClipGuard is already running",
-                              "Look for the green shield in the taskbar's notification area.")
+                              "Look for the shield in the taskbar's notification area.")
                 return 0
 
         signal.signal(signal.SIGINT, lambda *a: self.quit())
@@ -229,8 +242,11 @@ class App:
 
     def _run_windows(self) -> int:
         import tkinter as tk
+        from .theme import enable_dpi_awareness, load_fonts
         from .winapi import PasteHook
 
+        enable_dpi_awareness()
+        load_fonts()
         self.root = tk.Tk()
         self.root.withdraw()
         self._start_tray(in_thread=True)

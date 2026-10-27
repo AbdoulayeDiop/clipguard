@@ -8,12 +8,14 @@ On Windows it can also **stop the paste itself**: press Ctrl+V with a secret on 
 
 ![Paste guard dialog](docs/paste-dialog.png)
 
+The dialog follows Windows' light or dark app setting.
+
 ## Tray icon
 
-While ClipGuard runs, a shield sits in the notification area of the taskbar (on Windows, click the **^** arrow if it's hidden; drag it onto the taskbar to keep it visible). Green means active, grey means paused. Right-click it for:
+While ClipGuard runs, a shield sits in the notification area of the taskbar (on Windows, click the **^** arrow if it's hidden; drag it onto the taskbar to keep it visible). A solid shield means ClipGuard is watching; an outline means it's paused. Right-click it for:
 
 - **Pause:** stop watching temporarily.
-- **Ask before pasting sensitive data** (Windows): turn the paste guard on or off.
+- **Ask before pasting secrets** (Windows): turn the paste guard on or off.
 - **Edit settings** / **Reload settings:** open `config.toml`, then apply your changes without restarting.
 - **Open ClipGuard folder:** settings, `clipguard.log` and `detections.jsonl`.
 - **Quit ClipGuard.**
@@ -135,6 +137,10 @@ Use `which clipguard` to get the right path.
 - The paste guard is Windows-only, and only catches the keyboard shortcut (see above).
 - Detection is pattern-based. It will miss some secrets and occasionally flag harmless text; use `ignore_values` and `disabled_detectors` to tune it.
 - On macOS the first notification may ask for permission for "Script Editor" (used to show notifications).
+
+## Design
+
+The look (colours, the redaction-bar motif, the Atkinson Hyperlegible typefaces, the shield) comes from the ClipGuard design system. `src/clipguard/theme.py` mirrors its tokens for tkinter; change both together. The fonts are bundled under `src/clipguard/fonts/` (SIL Open Font License, see `OFL.txt`).
 
 ## Development
 

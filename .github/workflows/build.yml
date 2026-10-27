@@ -46,11 +46,11 @@ jobs:
         run: python -c "from clipguard.icon import save_ico; save_ico('clipguard.ico')"
 
       - name: Build console executable
-        run: pyinstaller --onefile --name clipguard --paths src ${{ matrix.hidden }} packaging/entry.py
+        run: pyinstaller --onefile --name clipguard --paths src --collect-data clipguard ${{ matrix.hidden }} packaging/entry.py
 
       - name: Build background executable (Windows, no console window)
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --noconsole --name clipguard-background --paths src ${{ matrix.hidden }} packaging/entry.py
+        run: pyinstaller --onefile --noconsole --name clipguard-background --paths src --collect-data clipguard ${{ matrix.hidden }} packaging/entry.py
 
       - name: Smoke test
         shell: bash

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clipguard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Desktop alerts when you copy passwords, API keys, card numbers or other sensitive data."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,9 @@ clipguard = "clipguard.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+clipguard = ["fonts/*.ttf", "fonts/OFL.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
