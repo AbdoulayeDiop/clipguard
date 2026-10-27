@@ -4,6 +4,34 @@ A small background app that warns you when you copy something sensitive (a passw
 
 Works on macOS, Windows and Linux. Everything runs locally: nothing is sent anywhere, and the sensitive value is never written to disk or shown in full in notifications.
 
+On Windows it can also **stop the paste itself**: press Ctrl+V with a secret on the clipboard and ClipGuard asks whether to paste a masked version instead.
+
+![Paste guard dialog](docs/paste-dialog.png)
+
+## Tray icon
+
+While ClipGuard runs, a shield sits in the notification area of the taskbar (on Windows, click the **^** arrow if it's hidden; drag it onto the taskbar to keep it visible). Green means active, grey means paused. Right-click it for:
+
+- **Pause:** stop watching temporarily.
+- **Ask before pasting sensitive data** (Windows): turn the paste guard on or off.
+- **Edit settings** / **Reload settings:** open `config.toml`, then apply your changes without restarting.
+- **Open ClipGuard folder:** settings, `clipguard.log` and `detections.jsonl`.
+- **Quit ClipGuard.**
+
+## Paste guard (Windows)
+
+When the clipboard holds something sensitive and you press **Ctrl+V** (or Ctrl+Shift+V), ClipGuard holds the paste and shows what it found, plus a preview of the masked text. You can then choose:
+
+| Button | What gets pasted |
+|---|---|
+| **Paste masked** (Enter) | The text with secrets replaced: `**** **** **** 1111`, `postgres://admin:********@host`, `[PRIVATE KEY REDACTED]`… Your clipboard keeps the original afterwards. |
+| **Paste original** | The text as copied. ClipGuard won't ask again until you copy something else. |
+| **Cancel** (Esc) | Nothing. |
+
+Clean text pastes instantly with no dialog. The check also covers text you paste right after copying, before the watcher's next poll.
+
+Not covered: pasting through a right-click menu or Edit → Paste (only the keyboard shortcut is intercepted), and automatic typing by other software such as a password manager's auto-type, which is deliberately left alone. On macOS and Linux you get the copy-time notification only.
+
 ## What it detects
 
 | Severity | Examples |
@@ -25,7 +53,7 @@ Grab the file for your system from the [latest release](https://github.com/Abdou
 | macOS (Apple Silicon) | `clipguard-macos-arm64` |
 | Linux | `clipguard-linux-x64` |
 
-Double-click to start watching the clipboard. The background version has no window; to stop it, end **clipguard-background** in Task Manager. To start it at login, press Win+R, type `shell:startup`, and put a shortcut to the `.exe` in that folder.
+Double-click to start: the shield appears in the taskbar's notification area, and you quit from its right-click menu. Starting it a second time does nothing, because only one copy runs at a time. To start it at login, press Win+R, type `shell:startup`, and put a shortcut to the `.exe` in that folder.
 
 Windows SmartScreen may warn the first time because the file isn't code-signed: click **More info → Run anyway**. On macOS, run `chmod +x clipguard-macos-arm64`, then right-click → Open the first time.
 
@@ -57,6 +85,8 @@ Options for `clipguard run`:
 
 - `--min-severity low|medium|high`: alert threshold
 - `--auto-clear 30`: wipe high-severity secrets from the clipboard after 30 seconds (only if you haven't copied something else since)
+- `--no-tray`: run without the tray icon
+- `--no-paste-guard`: don't intercept Ctrl+V
 
 ## Configure
 
@@ -73,6 +103,8 @@ auto_clear_seconds = 0
 disabled_detectors = ["jwt"]
 ignore_values = ["my-public-test-key"]
 log_detections = true
+tray = true
+paste_guard = true        # Windows
 ```
 
 If logging is on, `detections.jsonl` in the same folder records *what kind* of data was detected and when, never the value.
@@ -100,7 +132,7 @@ Use `which clipguard` to get the right path.
 
 ## Limitations
 
-- Alerts happen when you **copy**, not when you paste. Detecting *where* you paste needs OS-level accessibility hooks; that's on the roadmap.
+- The paste guard is Windows-only, and only catches the keyboard shortcut (see above).
 - Detection is pattern-based. It will miss some secrets and occasionally flag harmless text; use `ignore_values` and `disabled_detectors` to tune it.
 - On macOS the first notification may ask for permission for "Script Editor" (used to show notifications).
 
@@ -113,10 +145,12 @@ pytest
 
 Test secrets are assembled at runtime so no real-looking token appears in the source.
 
+`packaging/e2e_windows.py` is an end-to-end test of the paste guard. CI runs it on Windows against the built `.exe`: it copies text, presses Ctrl+V in a test window and checks what gets pasted.
+
 ## Roadmap
 
-- Menu bar / system tray icon with pause and resume
-- Paste-time warnings for specific apps (browsers, chat apps)
+- Paste guard on macOS
+- Only guard pastes into specific apps (browsers, chat apps)
 - Per-app allowlist (e.g. don't alert when copying from your password manager)
 - Custom regex detectors in config
 

@@ -16,7 +16,7 @@ text ──► truncate ──► pattern detectors ──► password heuristic
 2. **Pattern detectors.** Each entry in the `PATTERNS` table is a regular expression, sometimes paired with a validation function. Every regex match is checked against its validator, and only matches that pass become findings.
 3. **Password heuristic.** A separate check decides whether the *entire* clipboard is a single random-looking secret (see [below](#the-password-heuristic)).
 4. **Filtering.** Detectors below `min_severity` or listed in `disabled_detectors` are skipped before they run.
-5. **De-duplication.** Findings are sorted by severity (highest first). Any finding that sits entirely inside another finding of equal or higher severity is dropped. A database URL like `postgres://admin:hunter2@host/db` therefore produces one "Database URL with password" finding, not that plus a separate "Password in text".
+5. **De-duplication.** Findings are sorted by severity (highest first). Any finding that overlaps a finding of equal or higher severity is dropped. In `postgres://admin:hunter2@db.example.com/app`, for example, `hunter2@db.example.com` also looks like an email address (low), but only the high-severity "Database URL with password" finding is kept.
 
 Each finding records the detector id, a human-readable label, the severity, the matched text and its position. The matched text stays in memory and is only shown masked (see [Masking](#masking)).
 
@@ -53,7 +53,7 @@ Most of these rely on a **fixed prefix** that the provider puts on every key. Th
 | `private_key` | high | A PEM header such as `-----BEGIN RSA PRIVATE KEY-----` (also EC, DSA, OPENSSH, PGP, ENCRYPTED and generic) |
 | `jwt` | medium | Three dot-separated base64url segments, where the first two start with `eyJ`, which is how `{"` looks when base64-encoded |
 | `db_url` | high | A `postgres://`, `mysql://`, `mongodb://`, `mongodb+srv://`, `redis://` or `amqp://` URL containing `user:password@` |
-| `password_assignment` | high | The words `password`, `passwd`, `pwd`, `pass`, `secret`, `api_key`/`apikey`, or `token`, followed by `:` or `=` and a value of 6 or more non-space characters. Only the value is reported. |
+| `password_assignment` | high | The words `password`, `passwd`, `pwd`, `pass`, `secret`, `api_key`/`apikey`, or `token`, followed by `:` or `=` and a value of 6 or more non-space characters that contains a digit or symbol, or is 16+ characters long. Only the value is reported. |
 
 ### Financial
 
@@ -71,7 +71,7 @@ That's why `4111 1111 1111 1111` is flagged but `4111 1111 1111 1112` isn't.
 | Id | Severity | What it matches |
 |---|---|---|
 | `us_ssn` | high | `NNN-NN-NNNN`, excluding numbers the US never issues (area `000`, `666` or `9xx`, group `00`, serial `0000`). The dashes are required. |
-| `fr_nir` | high | French social security number: sex digit (1 or 2), year, month (01–12 or 20–99 for special cases), department (2 digits or `2A`/`2B` for Corsica), commune, order number and 2-digit key, with optional spaces. The key is **not** checked yet. |
+| `fr_nir` | high | French social security number: sex digit (1 or 2), year, month (01–12 or 20–99 for special cases), department (2 digits or `2A`/`2B` for Corsica), commune, order number and 2-digit key, with optional spaces. **The key is verified:** it must equal 97 − (first 13 digits mod 97), with 2A/2B counted as 19/18. |
 | `email` | low | `name@domain.tld` |
 | `phone` | low | Digit groups separated by spaces, dots or dashes, optionally starting with `+country` or wrapped in parentheses. The match must contain **9–15 digits**, which excludes dates like `2026-10-27` (8 digits) and short numbers. |
 
@@ -99,7 +99,21 @@ Some examples:
 
 ## Masking
 
-Alerts and the `scan` command never show the full value. `mask()` keeps the first 4 characters, adds `…`, then up to 8 asterisks. For example, `sk_live_abcdefghijklmnop` is shown as `sk_l…********`. Values of 6 characters or fewer are fully replaced with asterisks.
+Alerts and the `scan` command never show the full value. `mask()` keeps the first 4 characters of values of 20+ characters (so you can tell which API key it is), 2 characters of values of 10–19 characters, and none of shorter ones, then adds `…` and up to 8 asterisks. For example, `sk_live_abcdefghijklmnop` is shown as `sk_l…********` and `Tr0ub4dor&3` as `Tr…********`.
+
+### Masked paste (`redact`)
+
+The Windows paste guard's **Paste masked** option uses `redact(text, findings)`, which replaces each finding inside the text and leaves everything else untouched:
+
+| Detector | Replacement |
+|---|---|
+| `credit_card` | Digits hidden except the last 4, separators kept: `****-****-****-1111` |
+| `iban` | Country code, check digits and last 4: `FR76 **** 0189` |
+| `private_key` | The whole block becomes `[PRIVATE KEY REDACTED]` |
+| `db_url` | Only the password: `postgres://admin:********@host/app` |
+| `email` | First letter and domain: `j***@example.com` |
+| `phone` | Last 2 digits: `******78` |
+| everything else | First 4 characters if the value is 12+ characters long, then `********` |
 
 The detection log (`detections.jsonl`) stores only detector ids and severity, never the value or a masked form of it.
 
@@ -115,8 +129,7 @@ The detection log (`detections.jsonl`) stores only detector ids and severity, ne
 
 ## Known limitations
 
-- **`password_assignment` is broad.** It matches the keyword followed by `:`, so ordinary text like `pass: tomorrow` triggers a high-severity alert. If this happens often, disable it or tighten the regex. (Requiring the value to contain a digit or symbol would fix most cases.)
-- **The `fr_nir` key isn't verified.** The last two digits of a NIR are a checksum (97 minus the first 13 digits mod 97). Adding that check would remove most false matches on long numbers.
+- **`password_assignment` needs a non-letter or 16+ characters** in the value, so `pass: tomorrow` is ignored, but a letters-only password shorter than 16 characters is missed.
 - **SSNs without dashes aren't detected.** Matching plain 9-digit numbers would flag too much.
 - **Passphrases with spaces aren't detected** by the password heuristic.
 - **Secrets without a prefix,** like generic hex tokens or most internal API keys, are only caught if the password heuristic or a `password=`/`token=` context picks them up.
