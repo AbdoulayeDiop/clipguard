@@ -1,8 +1,10 @@
 name: build
 
 # Builds standalone executables with PyInstaller.
-# - Every push to main: binaries are uploaded as workflow artifacts.
-# - Pushing a tag like v0.1.0: binaries are also attached to a GitHub Release.
+# - Every push to main: binaries are built and tested (Windows gets a real
+#   end-to-end paste test) and uploaded as workflow artifacts.
+# - Run manually from the Actions tab (or push a v* tag): also publishes a
+#   GitHub Release named after __version__.
 
 on:
   push:
@@ -21,10 +23,13 @@ jobs:
         include:
           - os: windows-latest
             name: windows-x64
+            hidden: --hidden-import pystray._win32 --icon clipguard.ico
           - os: macos-latest
             name: macos-arm64
+            hidden: --hidden-import pystray._darwin
           - os: ubuntu-latest
             name: linux-x64
+            hidden: --hidden-import pystray._xorg --hidden-import pystray._appindicator --hidden-import pystray._gtk
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,23 +37,31 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install
+      - name: Install and unit-test
         run: |
           pip install . pyinstaller pytest
           pytest -q
 
+      - name: Make icon
+        run: python -c "from clipguard.icon import save_ico; save_ico('clipguard.ico')"
+
       - name: Build console executable
-        run: pyinstaller --onefile --name clipguard --paths src packaging/entry.py
+        run: pyinstaller --onefile --name clipguard --paths src ${{ matrix.hidden }} packaging/entry.py
 
       - name: Build background executable (Windows, no console window)
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --noconsole --name clipguard-background --paths src packaging/entry.py
+        run: pyinstaller --onefile --noconsole --name clipguard-background --paths src ${{ matrix.hidden }} packaging/entry.py
 
       - name: Smoke test
         shell: bash
         run: |
           ./dist/clipguard --version
           printf 'card 4111 1111 1111 1111\n' | ./dist/clipguard scan - || test $? -eq 1
+
+      - name: End-to-end paste test (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: python packaging/e2e_windows.py dist/clipguard.exe
 
       - name: Package
         shell: bash
@@ -95,8 +108,9 @@ jobs:
             gh release upload "$TAG" out/* --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
+          notes_file=packaging/release-notes.md
           gh release create "$TAG" out/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "ClipGuard ${TAG}" \
-            --notes "Standalone executables, no Python needed. On Windows, download clipguard-background-windows-x64.exe to run silently, or clipguard-windows-x64.exe to see output in a console."
+            --notes-file "$notes_file"

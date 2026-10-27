@@ -6,7 +6,7 @@ appears literally in the source (keeps GitHub secret scanning quiet).
 
 import pytest
 
-from clipguard.detectors import iban_valid, luhn_valid, mask, scan
+from clipguard.detectors import iban_valid, luhn_valid, mask, redact, scan
 
 
 def ids(text, **kw):
@@ -42,7 +42,8 @@ JWT = j("eyJhbGciOiJIUzI1NiJ9", ".", "eyJzdWIiOiIxMjM0NTY3ODkwIn0", ".", "dozjgN
     ("FR76 3000 6000 0112 3456 7890 189", "iban"),
     ("GB82WEST12345698765432", "iban"),
     ("SSN 123-45-6789", "us_ssn"),
-    ("1 85 05 78 006 084 36", "fr_nir"),
+    ("1 85 05 78 006 084 91", "fr_nir"),
+    ("185052A00608435", "fr_nir"),  # Corsica (2A)
 ])
 def test_detects(text, expected):
     assert expected in ids(text)
@@ -59,6 +60,33 @@ def test_detects(text, expected):
 ])
 def test_no_false_positives(text):
     assert ids(text, min_severity="medium") == set()
+
+
+@pytest.mark.parametrize("text", [
+    "pass: tomorrow",                 # plain word after "pass:"
+    "1 85 05 78 006 084 36",          # NIR with wrong key
+])
+def test_fixed_false_positives(text):
+    assert ids(text, min_severity="medium") == set()
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Card 4111-1111-1111-1111 ok", "Card ****-****-****-1111 ok"),
+    ("password: hunter2!", "password: ********"),
+    ("postgres://admin:hunter2pass@db.example.com/app",
+     "postgres://admin:********@db.example.com/app"),
+    ("x\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\n-----END RSA PRIVATE KEY-----\ny",
+     "x\n[PRIVATE KEY REDACTED]\ny"),
+    ("iban FR76 3000 6000 0112 3456 7890 189 end", "iban FR76 **** 0189 end"),
+    ("no secrets here", "no secrets here"),
+])
+def test_redact(text, expected):
+    assert redact(text, scan(text)) == expected
+
+
+def test_redact_hides_api_key():
+    out = redact(f"export KEY={STRIPE}", scan(f"export KEY={STRIPE}"))
+    assert STRIPE not in out and out.startswith("export KEY=sk_l")
 
 
 def test_high_entropy_password():

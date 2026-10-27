@@ -64,15 +64,34 @@ class Monitor:
         self._last_digest: str | None = None
         self._clear_at: float | None = None
         self._clear_digest: str | None = None
+        self.last_findings: list[Finding] = []  # findings for the current clipboard
         if self.log_path is None and self.config.log_detections:
             self.log_path = config_dir() / "detections.jsonl"
+
+    def findings_for(self, text: str) -> list[Finding]:
+        """Scan text with the user's settings (threshold, disabled detectors, ignores)."""
+        if not text or text.strip() in self.config.ignore_values:
+            return []
+        return [
+            f for f in scan(text, self.config.min_severity, self.config.disabled_detectors)
+            if f.match not in self.config.ignore_values
+        ]
+
+    def set_clipboard(self, text: str) -> None:
+        """Write to the clipboard without triggering an alert for our own write."""
+        self.write(text)
+        self._last_digest = _digest(text)
+        self.last_findings = self.findings_for(text)
 
     def prime(self) -> None:
         """Remember what's already on the clipboard so it isn't flagged at startup."""
         try:
-            self._last_digest = _digest(self.read() or "")
+            text = self.read() or ""
         except Exception:
             self._last_digest = None
+            return
+        self._last_digest = _digest(text)
+        self.last_findings = self.findings_for(text)  # known, but no alert
 
     def tick(self) -> list[Finding] | None:
         """Check the clipboard once. Returns findings if a new alert fired."""
@@ -89,13 +108,8 @@ class Monitor:
             return None
         self._last_digest = digest
 
-        if text.strip() in self.config.ignore_values:
-            return None
-
-        findings = [
-            f for f in scan(text, self.config.min_severity, self.config.disabled_detectors)
-            if f.match not in self.config.ignore_values
-        ]
+        findings = self.findings_for(text)
+        self.last_findings = findings
         if not findings:
             return None
 
@@ -124,6 +138,7 @@ class Monitor:
         except Exception:
             return False
         self._last_digest = _digest("")
+        self.last_findings = []
         self.notifier("Clipboard cleared",
                       "ClipGuard removed the sensitive item from your clipboard.", False)
         return True

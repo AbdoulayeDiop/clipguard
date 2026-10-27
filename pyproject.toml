@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clipguard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Desktop alerts when you copy passwords, API keys, card numbers or other sensitive data."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-dependencies = ["pyperclip>=1.8"]
+dependencies = ["pyperclip>=1.8", "pystray>=0.19", "Pillow>=10"]
 classifiers = [
     "Environment :: Console",
     "Operating System :: MacOS",

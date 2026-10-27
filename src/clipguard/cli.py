@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -12,23 +13,53 @@ from .detectors import PATTERNS, SEVERITY_RANK, scan
 from .notify import notify
 
 
-def _cmd_run(args: argparse.Namespace) -> int:
-    from .monitor import Monitor, default_clipboard
+def _setup_logging() -> None:
+    from logging.handlers import RotatingFileHandler
 
-    cfg = load_config(Path(args.config) if args.config else None)
-    if args.min_severity:
-        cfg.min_severity = args.min_severity
-    if args.auto_clear is not None:
-        cfg.auto_clear_seconds = args.auto_clear
-    cfg.validate()
+    from .config import config_dir
+
+    logger = logging.getLogger("clipguard")
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    try:
+        config_dir().mkdir(parents=True, exist_ok=True)
+        fh = RotatingFileHandler(config_dir() / "clipguard.log", maxBytes=1_000_000,
+                                 backupCount=1, encoding="utf-8")
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    except OSError:
+        pass
+    if sys.stderr and getattr(sys.stderr, "isatty", lambda: False)():
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        logger.addHandler(sh)
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    from .app import App
+    from .monitor import default_clipboard
+
+    _setup_logging()
+    path = Path(args.config) if args.config else None
+    try:
+        cfg = load_config(path)
+        if args.min_severity:
+            cfg.min_severity = args.min_severity
+        if args.auto_clear is not None:
+            cfg.auto_clear_seconds = args.auto_clear
+        cfg.validate()
+    except Exception as e:  # visible even in the no-console build
+        notify("ClipGuard settings error", str(e)[:200])
+        print(f"Settings error: {e}", file=sys.stderr)
+        return 2
 
     read, write = default_clipboard()
     print(f"ClipGuard {__version__} is watching your clipboard "
           f"(alerts at '{cfg.min_severity}' and above). Press Ctrl+C to stop.")
-    try:
-        Monitor(cfg, read, write).run()
-    except KeyboardInterrupt:
-        print("\nClipGuard stopped.")
+    logging.getLogger("clipguard").info("started v%s", __version__)
+    App(cfg, read, write, use_tray=not args.no_tray,
+        use_paste_guard=not args.no_paste_guard, config_path=path).run()
+    print("ClipGuard stopped.")
     return 0
 
 
@@ -84,6 +115,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--min-severity", choices=list(SEVERITY_RANK))
     run.add_argument("--auto-clear", type=float, metavar="SECONDS",
                      help="clear high-severity secrets from the clipboard after N seconds")
+    run.add_argument("--no-tray", action="store_true", help="don't show the tray icon")
+    run.add_argument("--no-paste-guard", action="store_true",
+                     help="don't intercept Ctrl+V (Windows)")
     run.set_defaults(func=_cmd_run)
 
     sc = sub.add_parser("scan", help="scan a file or stdin ('-') and print findings")

@@ -31,9 +31,15 @@ class Finding:
         return mask(self.match)
 
 
-def mask(value: str, keep: int = 4) -> str:
-    """Mask a secret, keeping only a few leading characters."""
+def mask(value: str, keep: int | None = None) -> str:
+    """Mask a secret for display, keeping only a few leading characters.
+
+    Long values (API keys) keep 4 characters so you can tell which key it is;
+    short ones (passwords) keep fewer so the hint doesn't give much away.
+    """
     value = value.strip()
+    if keep is None:
+        keep = 4 if len(value) >= 20 else 2 if len(value) >= 10 else 0
     if len(value) <= keep + 2:
         return "*" * len(value)
     return value[:keep] + "…" + "*" * min(8, len(value) - keep)
@@ -66,6 +72,21 @@ def iban_valid(iban: str) -> bool:
     return int(numeric) % 97 == 1
 
 
+def nir_valid(nir: str) -> bool:
+    """French NIR: the 2-digit key equals 97 - (first 13 digits mod 97).
+
+    Corsican departments 2A and 2B are replaced by 19 and 18 for the computation.
+    """
+    s = nir.replace(" ", "").upper()
+    if len(s) != 15:
+        return False
+    body, key = s[:13], s[13:]
+    body = body[:5] + body[5:7].replace("2A", "19").replace("2B", "18") + body[7:]
+    if not body.isdigit() or not key.isdigit():
+        return False
+    return 97 - int(body) % 97 == int(key)
+
+
 def shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
@@ -86,7 +107,7 @@ def _looks_like_password(token: str) -> bool:
     if classes < 3:
         return False
     # Exclude obvious non-secrets: URLs, paths, emails.
-    if re.match(r"^(https?://|www\.|/|~/|[A-Za-z]:\\)", token):
+    if re.match(r"^([A-Za-z][A-Za-z0-9+.\-]*://|www\.|/|~/|[A-Za-z]:\\)", token):
         return False
     if re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", token):
         return False
@@ -137,14 +158,19 @@ PATTERNS: list[Pattern] = [
        r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b"),
     _p("npm_token", "npm token", HIGH, r"\bnpm_[A-Za-z0-9]{36}\b"),
     _p("hf_token", "Hugging Face token", HIGH, r"\bhf_[A-Za-z]{34}\b"),
+    # Matches the whole block (header to footer) so that masking hides the key body.
     _p("private_key", "Private key", HIGH,
-       r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----"),
+       r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----"
+       r"[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----|\Z)"),
     _p("jwt", "JSON Web Token", MEDIUM,
        r"\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+    # Reports only the password part, so masking keeps the rest of the URL readable.
     _p("db_url", "Database URL with password", HIGH,
-       r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:/@]+:[^\s@/]+@[^\s]+"),
+       r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:/@]+:([^\s@/]+)@[^\s]+",
+       group=1),
     _p("password_assignment", "Password in text", HIGH,
        r"(?i)\b(?:password|passwd|pwd|pass|secret|api[_-]?key|token)\s*[:=]\s*['\"]?([^\s'\"]{6,})",
+       validate=lambda v: len(v) >= 16 or any(not c.isalpha() for c in v),
        group=1),
 
     # --- Financial --------------------------------------------------------
@@ -158,7 +184,8 @@ PATTERNS: list[Pattern] = [
     _p("us_ssn", "US Social Security number", HIGH,
        r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"),
     _p("fr_nir", "French social security number (NIR)", HIGH,
-       r"\b[12][ ]?\d{2}[ ]?(?:0[1-9]|1[0-2]|[2-9]\d)[ ]?(?:\d{2}|2[AB])[ ]?\d{3}[ ]?\d{3}[ ]?\d{2}\b"),
+       r"\b[12][ ]?\d{2}[ ]?(?:0[1-9]|1[0-2]|[2-9]\d)[ ]?(?:\d{2}|2[AB])[ ]?\d{3}[ ]?\d{3}[ ]?\d{2}\b",
+       validate=lambda v: nir_valid(v)),
     _p("email", "Email address", LOW,
        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),
     _p("phone", "Phone number", LOW,
@@ -211,12 +238,60 @@ def scan(
     return _dedupe(findings)
 
 
+def redact_value(f: Finding) -> str:
+    """Replacement text for one finding when pasting a masked version."""
+    v = f.match
+    if f.detector == "private_key":
+        return "[PRIVATE KEY REDACTED]"
+    if f.detector == "credit_card":
+        # Keep the layout and the last 4 digits: **** **** **** 1111
+        digits_seen, total = 0, sum(c.isdigit() for c in v)
+        out = []
+        for c in v:
+            if c.isdigit():
+                digits_seen += 1
+                out.append(c if digits_seen > total - 4 else "*")
+            else:
+                out.append(c)
+        return "".join(out)
+    if f.detector == "iban":
+        compact = v.replace(" ", "")
+        return compact[:4] + " **** " + compact[-4:]
+    if f.detector == "email":
+        user, _, domain = v.partition("@")
+        return (user[:1] + "***@" + domain) if user else v
+    if f.detector == "phone":
+        return "*" * 6 + "".join(c for c in v if c.isdigit())[-2:]
+    keep = 4 if len(v) >= 12 else 0
+    return v[:keep] + "*" * 8
+
+
+def redact(text: str, findings: list[Finding]) -> str:
+    """Return text with every finding replaced by its masked form."""
+    spans: list[Finding] = []
+    for f in sorted(findings, key=lambda f: (f.start, -(f.end - f.start))):
+        if spans and f.start < spans[-1].end:
+            continue  # overlaps a span we're already masking
+        spans.append(f)
+    out, pos = [], 0
+    for f in spans:
+        out.append(text[pos:f.start])
+        out.append(redact_value(f))
+        pos = f.end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _dedupe(findings: list[Finding]) -> list[Finding]:
-    """Drop findings fully contained in a higher-or-equal severity finding."""
+    """Drop findings that overlap a higher-or-equal severity finding.
+
+    Example: in postgres://admin:pw@db.example.com the password (high) wins over
+    the "pw@db.example.com" email match (low).
+    """
     findings.sort(key=lambda f: (-SEVERITY_RANK[f.severity], f.start, -(f.end - f.start)))
     kept: list[Finding] = []
     for f in findings:
-        if any(k.start <= f.start and f.end <= k.end for k in kept):
+        if any(f.start < k.end and k.start < f.end for k in kept):
             continue
         kept.append(f)
     return kept

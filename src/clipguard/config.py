@@ -37,6 +37,13 @@ ignore_values = []
 # Keep a local log of what kind of data was detected and when.
 # The sensitive value itself is never written.
 log_detections = true
+
+# Show an icon in the system tray / menu bar (pause, settings, quit).
+tray = true
+
+# Windows only: when you press Ctrl+V with sensitive data on the clipboard,
+# ask whether to paste a masked version, the original, or nothing.
+paste_guard = true
 """
 
 
@@ -58,6 +65,8 @@ class Config:
     disabled_detectors: list[str] = field(default_factory=list)
     ignore_values: list[str] = field(default_factory=list)
     log_detections: bool = True
+    tray: bool = True
+    paste_guard: bool = True
 
     def validate(self) -> "Config":
         if self.min_severity not in SEVERITY_RANK:
