@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ClipGuard
+Comment=Alerts when you copy sensitive data
+Exec=clipguard
+Icon=dialog-warning
+Terminal=false
+X-GNOME-Autostart-enabled=true
