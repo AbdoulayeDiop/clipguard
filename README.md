@@ -19,7 +19,7 @@ By default, alerts fire at **medium** and above. Run `clipguard detectors` for t
 Requires Python 3.11+.
 
 ```bash
-pip install git+https://github.com/<you>/clipguard.git
+pip install git+https://github.com/AbdoulayeDiop/clipguard.git
 ```
 
 Linux also needs a clipboard tool and a notifier:
